@@ -7,11 +7,14 @@ Collaboritive use is recommended!
 
 ## Requirements:
 ```pip install spotipy```
+
 ```pip install slackclient```
 
 ## How to use:
 *Set up local address and api keys in env.sh and gever.py
+
 *source env.sh
+
 ```. ./env.sh```
 
 *Run gever.py
