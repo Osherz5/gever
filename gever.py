@@ -2,19 +2,19 @@ import time
 import os
 import spotipy
 from spotipy.util import prompt_for_user_token
-from slackclient import SlackClient
+import slack
 
 
 # Obtain here https://api.slack.com/
-SLACK_API = "YOUR_SLACK_API" # Looks like 'xoxb-303732729214-DXNVlObzNU4s9tv01eoOefVj'
+SLACK_API = "" # Looks like 'xoxb-303732729214-DXNVlObzNU4s9tv01eoOefVj'
 
 
 # Obtain here: https://developer.spotify.com/documentation/general/guides/app-settings/#register-your-app
-SPOTIFY_CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID' #Looks like '1735b67d768e48a2ac0df711a601a05f'
-SPOTIFY_CLIENT_SECRET = 'SPOTIFY_CLIENT_SECRET' # Same format as above
+SPOTIFY_CLIENT_ID = '' # Looks like '1735b67d768e48a2ac0df711a601a05f'
+SPOTIFY_CLIENT_SECRET = '' # Same format as above
 
-PLAYLIST_ID = "PLAYLIST_ID" # Looks like '0GP9NFEElh7pqbQoEx5z', Make sure your spotify api key has the right privilages
-USERNAME = "OJ" # Just enter your username...
+PLAYLIST_ID = "79tYcMQEeFledbVCvTKw5f" # Looks like '0GP9NFEElh7pqbQoEx5z', Make sure your spotify api key has the right privilages
+USERNAME = "" # Just enter your spotify username...
 
 POLL_TIMEOUT = 1
 
@@ -23,7 +23,9 @@ PLAYLIST_URI = "spotify:user:"+USERNAME+":playlist:"+PLAYLIST_ID
 
 POLL_TIMEOUT = 1
 
-slack_client = SlackClient(SLACK_API)
+slack_client = slack.RTMClient(token=SLACK_API)
+slack_webclient = slack.WebClient(token=SLACK_API)
+
 NOT_FOUND_TITLE = "Not found"
 
 RESET_TRACK_ID = "4WenC8xnhFyvARaqeItwqN" # A default track when resetting the playlist
@@ -35,8 +37,13 @@ glob_last_track = None
 
 def reset_playlist():
 	res = sp.user_playlist_replace_tracks(USERNAME, PLAYLIST_ID, [RESET_TRACK_ID])
-	res = sp.pause_playback()
-	res = sp.start_playback(context_uri=PLAYLIST_URI)
+	try:
+		res = sp.pause_playback()
+		res = sp.start_playback(context_uri=PLAYLIST_URI)
+	except:
+		print("Couldn't pause/play , probably no active device...")
+		
+	
 	
 def refresh_spotify_token():
 	global sp_token
@@ -45,8 +52,7 @@ def refresh_spotify_token():
 	sp = spotipy.Spotify(auth=sp_token)
 
 def send_msg(txt, chn):
-	slack_client.api_call(
-		"chat.postMessage",
+	slack_webclient.chat_postMessage(
 		channel=chn,
 		text=txt)
 
@@ -103,7 +109,7 @@ def skip_song():
 	sp.next_track()
 
 def current_song_title():
-	current_song = sp.currently_playing()['item']
+	current_song = sp.current_playback()['item']
 	title = get_track_title(current_song)
 	return title
 
@@ -123,6 +129,8 @@ def add_song(txt):
 	print(results)
 
 	return title
+	
+	
 
 def parse_bot_command(slack_events):
 	for event in slack_events:
@@ -171,31 +179,42 @@ def handle_command(cmd, chn):
 		print_help(chn)
 
 
+@slack.RTMClient.run_on(event='message')
+def onMsg(**payload):
+	
+	if not ('data' in payload and 'text' in payload['data']):
+		return
+		
+	command = payload['data']['text']
+	channel = payload['data']['channel']
+	
+	if command:
+		try:
+			print("Handling %s" % command)
+			handle_command(command, channel)
+		except spotipy.SpotifyException:
+			send_msg("Error, maybe token expired, retrying...", channel)
+			refresh_spotify_token()
+			# Retry
+			try:
+				handle_command(command, channel)
+			except Exception as e:
+				send_msg("Command failed with %s" % e)
+
+
+
+	
+
 def main():
-	if not slack_client.rtm_connect():
-		print("Can't connect slack client")
 
 	refresh_spotify_token()
+	
 	if not sp:
 		print("Can't init spotify")
 
-	print("Running!")
-	while True:
-		time.sleep(POLL_TIMEOUT)
-		command, channel = parse_bot_command(slack_client.rtm_read())
-		if command:
-			try:
-				print("Handling %s" % command)
-				handle_command(command, channel)
-			except spotipy.SpotifyException:
-				send_msg("Error, maybe token expired, retrying...", channel)
-				refresh_spotify_token()
-				# Retry
-				try:
-					handle_command(command, channel)
-				except Exception as e:
-					send_msg("Command failed with %s" % e)
-
+	print("Starting slack client")
+	slack_client.start()
+	
 
 
 main()
