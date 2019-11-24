@@ -4,17 +4,8 @@ import spotipy
 from spotipy.util import prompt_for_user_token
 import slack
 
+from configuration import *
 
-# Obtain here https://api.slack.com/
-SLACK_API = "" # Looks like 'xoxb-303732729214-DXNVlObzNU4s9tv01eoOefVj'
-
-
-# Obtain here: https://developer.spotify.com/documentation/general/guides/app-settings/#register-your-app
-SPOTIFY_CLIENT_ID = '' # Looks like '1735b67d768e48a2ac0df711a601a05f'
-SPOTIFY_CLIENT_SECRET = '' # Same format as above
-
-PLAYLIST_ID = "79tYcMQEeFledbVCvTKw5f" # Looks like '0GP9NFEElh7pqbQoEx5z', Make sure your spotify api key has the right privilages
-USERNAME = "" # Just enter your spotify username...
 
 POLL_TIMEOUT = 1
 
@@ -33,13 +24,14 @@ RESET_TRACK_ID = "4WenC8xnhFyvARaqeItwqN" # A default track when resetting the p
 sp_token = None
 sp = None
 
-glob_last_track = None
+glob_last_track = []
 
 def reset_playlist():
 	res = sp.user_playlist_replace_tracks(USERNAME, PLAYLIST_ID, [RESET_TRACK_ID])
 	try:
 		res = sp.pause_playback()
 		res = sp.start_playback(context_uri=PLAYLIST_URI)
+		return True
 	except:
 		print("Couldn't pause/play , probably no active device...")
 		
@@ -78,7 +70,9 @@ def get_track_title(track):
 	return ', '.join([a['name'] for a in track['artists']]) + " - " + track['name']
 
 def remove_last_song():
-	sp.user_playlist_remove_all_occurrences_of_tracks(USERNAME, PLAYLIST_ID, [glob_last_track['id']])
+	last_track = glob_last_track.pop()
+	sp.user_playlist_remove_all_occurrences_of_tracks(USERNAME, PLAYLIST_ID, [last_track['id']])
+	
 
 def get_playlist_songids():
 	playlist = sp.user_playlist(USERNAME, PLAYLIST_ID, fields="tracks")['tracks']
@@ -109,8 +103,11 @@ def skip_song():
 	sp.next_track()
 
 def current_song_title():
-	current_song = sp.current_playback()['item']
-	title = get_track_title(current_song)
+	current_song = sp.current_playback()
+	if not current_song:
+		return 'No song is currently playing...'
+	
+	title = get_track_title(current_song['item'])
 	return title
 
 
@@ -118,12 +115,13 @@ def add_song(txt):
 	global glob_last_track
 
 	results = sp.search(q=txt, limit=5)
+	
 	if len(results['tracks']['items']) < 1:
 		return NOT_FOUND_TITLE
 	top_track = results['tracks']['items'][0]
 	title = get_track_title(top_track)
 	results = sp.user_playlist_add_tracks(USERNAME, PLAYLIST_ID, [top_track['id']])
-	glob_last_track = top_track
+	glob_last_track += [top_track]
 
 	print("ADD\n====")
 	print(results)
@@ -173,7 +171,9 @@ def handle_command(cmd, chn):
 		skip_song()
 
 	elif splitted[0] == "reset":
-		reset_playlist()
+		if reset_playlist():
+			send_msg("Playlist was reset", chn)
+		
 
 	elif splitted[0] == "help":
 		print_help(chn)
