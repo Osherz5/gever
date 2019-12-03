@@ -65,7 +65,7 @@ def print_help(chn):
 	*current* : Shows the currently playing track
 	*recent* : Shows the most recently played songs
 	*search [txt]* : Search a song
-	*sadd [index]* : Add from search result
+	*sadd [index]* : Add from search results
 
 """
 	
@@ -119,7 +119,6 @@ def current_song_title():
 def search_song(q):
 
 	results = sp.search(q=q, type='track', limit=5)
-	index = 1
 	res = []
 	for t in results['tracks']['items']:
 		res += [t]
@@ -172,7 +171,8 @@ def handle_command(cmd, chn):
 		for t in glob_search_results:
 			index += 1
 			send_msg(str(index)+" - "+get_track_title(t), chn)
-		
+	
+	# Add from search
 	if splitted[0] == "sadd" and int(splitted[1]) in range(1,6) and glob_search_results:
 		global glob_last_track
 		track = glob_search_results[int(splitted[1])-1]
