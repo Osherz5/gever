@@ -5,6 +5,7 @@ from spotipy.util import prompt_for_user_token
 import slack
 
 from configuration import *
+#from sa_config import *
 
 
 POLL_TIMEOUT = 1
@@ -25,6 +26,7 @@ sp_token = None
 sp = None
 
 glob_last_track = []
+glob_search_results = []
 
 def reset_playlist():
 	res = sp.user_playlist_replace_tracks(USERNAME, PLAYLIST_ID, [RESET_TRACK_ID])
@@ -32,15 +34,15 @@ def reset_playlist():
 		res = sp.pause_playback()
 		res = sp.start_playback(context_uri=PLAYLIST_URI)
 		return True
-	except:
-		print("Couldn't pause/play , probably no active device...")
+	except Exception as e:
+		print("Couldn't pause/play , %s" % str(e))
 		
 	
 	
 def refresh_spotify_token():
 	global sp_token
 	global sp
-	sp_token = prompt_for_user_token(USERNAME,"playlist-modify-public user-modify-playback-state user-read-playback-state user-read-recently-played user-modify-playback-state") # Your spotify api key need to have all these privilages!
+	sp_token = prompt_for_user_token(USERNAME,"playlist-modify-public playlist-modify-private app-remote-control user-read-playback-state user-read-recently-played user-modify-playback-state streaming user-top-read") # Your spotify api key need to have all these privilages!
 	sp = spotipy.Spotify(auth=sp_token)
 
 def send_msg(txt, chn):
@@ -62,6 +64,8 @@ def print_help(chn):
 	*tail* : Shows the bottom of the playlist
 	*current* : Shows the currently playing track
 	*recent* : Shows the most recently played songs
+	*search [txt]* : Search a song
+	*sadd [index]* : Add from search result
 
 """
 	
@@ -96,6 +100,7 @@ def get_recent_songs():
 	return desc
 
 def get_playlist_tail(count):
+	#TODO: mark current song
 	tracks = get_playlist_songids()
 	return [get_track_title(sp.track(t)) for t in tracks[-count:]]
 
@@ -111,13 +116,26 @@ def current_song_title():
 	return title
 
 
+def search_song(q):
+
+	results = sp.search(q=q, type='track', limit=5)
+	index = 1
+	res = []
+	for t in results['tracks']['items']:
+		res += [t]
+	
+	return res
+	
+
 def add_song(txt):
 	global glob_last_track
 
-	results = sp.search(q=txt, limit=5)
+	results = sp.search(q=txt, type='track', limit=5)
 	
 	if len(results['tracks']['items']) < 1:
 		return NOT_FOUND_TITLE
+		
+	
 	top_track = results['tracks']['items'][0]
 	title = get_track_title(top_track)
 	results = sp.user_playlist_add_tracks(USERNAME, PLAYLIST_ID, [top_track['id']])
@@ -127,7 +145,6 @@ def add_song(txt):
 	print(results)
 
 	return title
-	
 	
 
 def parse_bot_command(slack_events):
@@ -147,7 +164,26 @@ def handle_command(cmd, chn):
 			send_msg("Can't find song...", chn)
 		else:
 			send_msg("Adding " + title, chn)
+			
+	if splitted[0] == "search":
+		global glob_search_results
+		glob_search_results = search_song(" ".join(splitted[1:]))
+		index = 0
+		for t in glob_search_results:
+			index += 1
+			send_msg(str(index)+" - "+get_track_title(t), chn)
+		
+	if splitted[0] == "sadd" and int(splitted[1]) in range(1,6) and glob_search_results:
+		global glob_last_track
+		track = glob_search_results[int(splitted[1])-1]
+		result = sp.user_playlist_add_tracks(USERNAME, PLAYLIST_ID, [track['id']])
+		glob_last_track += [track]
 
+		print("ADD\n====")
+		print(result)
+		send_msg("Adding " + get_track_title(track), chn)
+		
+			
 	elif splitted[0] == "current":
 		send_msg("Current song is %s" % current_song_title(), chn)
 
@@ -185,6 +221,8 @@ def onMsg(**payload):
 	if not ('data' in payload and 'text' in payload['data']):
 		return
 		
+	# TODO: filter self messages 
+	
 	command = payload['data']['text']
 	channel = payload['data']['channel']
 	
@@ -199,7 +237,7 @@ def onMsg(**payload):
 			try:
 				handle_command(command, channel)
 			except Exception as e:
-				send_msg("Command failed with %s" % e)
+				send_msg("Command failed with %s" % e, channel)
 
 
 
